@@ -1,0 +1,182 @@
+# Contract: Environmental Sensor Interface
+# Feature: 003-bme688-environmental
+# Date: 2026-02-13
+
+description: |
+  Defines the contract for the EnvironmentalSensorReader class that communicates
+  with the BME688 environmental sensor via I2C. This contract ensures the sensor
+  reading interface is testable without physical hardware.
+
+interface:
+  class: EnvironmentalSensorReader
+  module: src.lib.environmental_sensor
+
+  initialization:
+    method: __init__
+    parameters:
+      - name: address
+        type: int
+        description: I2C address (0x76 or 0x77)
+        default: 0x76
+        constraints: Must be valid BME688 I2C address
+
+      - name: timeout
+        type: float
+        description: Read timeout in seconds
+        default: 2.0
+        constraints: Must be > 0, recommended 2.0 seconds
+
+    behavior: |
+      - Initializes BME688 sensor connection
+      - Configures sensor oversampling (temperature: 8x, humidity: 2x, pressure: 4x)
+      - Sets filter size to 3 for noise reduction
+      - Configures gas heater (300°C for 150ms)
+      - Logs initialization status (success/failure)
+      - Does NOT raise exception if sensor not detected (sets internal flag)
+
+    postconditions:
+      - Sensor configuration attempted
+      - Initialization status logged
+      - Object usable regardless of sensor presence
+
+  reading:
+    method: read
+    parameters: []
+
+    returns:
+      type: EnvironmentalReading
+      description: Environmental data snapshot or None values if reading failed
+
+    behavior: |
+      - Triggers forced mode sensor reading
+      - Waits for data ready (with timeout)
+      - Reads temperature, humidity, pressure, gas resistance
+      - Returns EnvironmentalReading with all available data
+      - If timeout: returns EnvironmentalReading with all None values
+      - If partial failure: returns EnvironmentalReading with partial data
+      - Logs errors but does not raise exceptions
+
+    timeout_handling:
+      - Maximum wait time: configured timeout (default 2.0 seconds)
+      - On timeout: Log warning, return EnvironmentalReading(all None values)
+      - Plant monitoring must NOT be blocked by timeout
+
+    error_handling:
+      - IOError (I2C communication failure): Log error, return invalid reading
+      - Sensor not initialized: Log warning, return invalid reading
+      - Partial read failure: Return valid reading with available data
+      - No exceptions raised (graceful degradation)
+
+  availability_check:
+    method: is_available
+    parameters: []
+
+    returns:
+      type: bool
+      description: True if sensor was successfully initialized and is responsive
+
+    behavior: |
+      - Checks if sensor was detected during initialization
+      - Does NOT perform I2C communication (fast check)
+      - Used by monitoring system to decide whether to attempt read
+
+test_scenarios:
+  - name: successful_read
+    description: Normal operation with all sensors working
+    given:
+      - BME688 sensor present on I2C bus at 0x76
+      - Sensor initialized successfully
+    when: read() called
+    then:
+      - Returns EnvironmentalReading with all four values populated
+      - temperature between -40.0 and 85.0
+      - humidity between 0.0 and 100.0
+      - pressure between 300.0 and 1100.0
+      - gas_resistance > 0.0
+      - is_valid == True
+
+  - name: sensor_not_present
+    description: Sensor not detected during initialization
+    given:
+      - No BME688 sensor on I2C bus
+    when: __init__() called
+    then:
+      - Logs warning about sensor not detected
+      - is_available() returns False
+      - read() returns EnvironmentalReading(all None, is_valid=False)
+
+  - name: read_timeout
+    description: Sensor read takes longer than timeout
+    given:
+      - Sensor initialized but read hangs
+    when: read() called
+    then:
+      - Waits maximum of timeout seconds
+      - Logs timeout warning
+      - Returns EnvironmentalReading(all None, is_valid=False)
+      - Does not raise exception
+
+  - name: partial_read_failure
+    description: Some readings succeed, others fail
+    given:
+      - Sensor returns temperature and pressure but humidity/gas fail
+    when: read() called
+    then:
+      - Returns EnvironmentalReading with partial data
+      - temperature and pressure populated
+      - humidity and gas_resistance are None
+      - is_valid == True (at least one reading succeeded)
+
+  - name: out_of_range_values
+    description: Sensor returns values outside expected indoor range
+    given:
+      - Sensor returns temperature 55.0°C (above 50°C threshold)
+    when: read() called
+    then:
+      - Returns EnvironmentalReading with actual value (55.0)
+      - Value not rejected or clamped
+      - Display layer will add warning indicator
+
+  - name: i2c_communication_error
+    description: I2C bus error during read
+    given:
+      - Sensor initialized but I2C bus fails during read
+    when: read() called
+    then:
+      - Catches IOError
+      - Logs error with details
+      - Returns EnvironmentalReading(all None, is_valid=False)
+      - Does not raise exception
+
+error_codes:
+  - code: SENSOR_NOT_DETECTED
+    message: "Environmental sensor not detected at I2C address {address}"
+    severity: WARNING
+    action: Continue monitoring without environmental data
+
+  - code: READ_TIMEOUT
+    message: "Environmental sensor read timeout after {timeout} seconds"
+    severity: WARNING
+    action: Skip environmental reading for this cycle
+
+  - code: I2C_ERROR
+    message: "I2C communication error: {error_details}"
+    severity: ERROR
+    action: Skip environmental reading for this cycle
+
+  - code: PARTIAL_READ
+    message: "Partial environmental sensor read: {failed_readings} failed"
+    severity: INFO
+    action: Display successful readings, show error for failed ones
+
+dependencies:
+  external:
+    - name: bme680
+      description: Pimoroni BME680/BME688 Python library
+      version: ">=1.0.0"
+      purpose: I2C communication and sensor control
+
+  internal:
+    - name: EnvironmentalReading
+      module: src.models.environmental_reading
+      purpose: Data model for sensor readings

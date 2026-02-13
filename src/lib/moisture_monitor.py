@@ -31,6 +31,14 @@ except RuntimeError:
     SENSOR_AVAILABLE = False
     SensorReader = None
 
+try:
+    from src.lib.environmental_sensor import EnvironmentalSensorReader
+    ENVIRONMENTAL_SENSOR_AVAILABLE = True
+except ImportError:
+    # Environmental sensor library not available
+    ENVIRONMENTAL_SENSOR_AVAILABLE = False
+    EnvironmentalSensorReader = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -105,6 +113,25 @@ class MoistureMonitor:
         else:
             logger.warning("Sensor reader not available (I2C libraries not found)")
             self.sensor = None
+
+        # Initialize environmental sensor (BME688)
+        if ENVIRONMENTAL_SENSOR_AVAILABLE:
+            try:
+                self.environmental_sensor = EnvironmentalSensorReader(
+                    address=0x76,  # Default BME688 I2C address
+                    timeout=2.0    # 2 second timeout per spec
+                )
+                if self.environmental_sensor.is_available():
+                    logger.info("Environmental sensor initialized successfully")
+                else:
+                    logger.warning("Environmental sensor not detected - monitoring will continue without environmental data")
+                    self.environmental_sensor = None
+            except Exception as e:
+                logger.warning(f"Failed to initialize environmental sensor: {e}")
+                self.environmental_sensor = None
+        else:
+            logger.debug("Environmental sensor library not available")
+            self.environmental_sensor = None
 
         # Initialize ntfy.sh client
         self.notifier = NtfyClient(base_url=self.config.ntfy_url, max_retries=3)
@@ -282,7 +309,7 @@ class MoistureMonitor:
         """
         logger.debug("Starting monitoring cycle")
 
-        # Read all sensors
+        # Read all moisture sensors (FIRST - sequential I2C to avoid conflicts)
         readings = self.read_sensors()
         logger.info(
             f"Read {len(readings)} sensors: " +
@@ -291,6 +318,25 @@ class MoistureMonitor:
                 for p in self.plants if p.current_moisture is not None
             ])
         )
+
+        # Read environmental sensor (AFTER moisture sensors - sequential I2C)
+        if self.environmental_sensor is not None:
+            try:
+                env_reading = self.environmental_sensor.read()
+
+                if env_reading.is_valid:
+                    # Display environmental data with 2 decimal places
+                    env_display = env_reading.format_for_display()
+                    logger.info(f"Environment: {env_display}")
+                else:
+                    logger.warning("Environment: UNAVAILABLE (sensor read failed)")
+
+            except Exception as e:
+                logger.error(f"Environmental sensor read error: {e}")
+                logger.info("Environment: ERROR")
+        else:
+            # Environmental sensor not initialized - skip silently (already warned at init)
+            logger.debug("Environmental sensor not available - skipping environmental read")
 
         # Check thresholds
         plants_needing_water = self.check_thresholds()
