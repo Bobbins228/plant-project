@@ -6,6 +6,7 @@ ADS1x15-ADC
 
 # I2C environmental sensor (BME688)
 bme680
+smbus2
 
 # HTTP requests for ntfy.sh API
 requests==2.31.0

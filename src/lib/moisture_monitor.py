@@ -118,7 +118,7 @@ class MoistureMonitor:
         if ENVIRONMENTAL_SENSOR_AVAILABLE:
             try:
                 self.environmental_sensor = EnvironmentalSensorReader(
-                    address=0x76,  # Default BME688 I2C address
+                    i2c_bus=1,     # I2C bus 1 (Raspberry Pi pins 3 & 5)
                     timeout=2.0    # 2 second timeout per spec
                 )
                 if self.environmental_sensor.is_available():

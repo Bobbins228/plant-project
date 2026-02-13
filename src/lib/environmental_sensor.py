@@ -12,8 +12,12 @@ from typing import Optional
 
 try:
     import bme680
+    import smbus2
+    BME680_AVAILABLE = True
 except ImportError:
     bme680 = None
+    smbus2 = None
+    BME680_AVAILABLE = False
 
 from src.models.environmental_reading import EnvironmentalReading
 
@@ -33,26 +37,59 @@ class EnvironmentalSensorReader:
         timeout: Maximum seconds to wait for sensor data (default 2.0)
     """
 
-    def __init__(self, address: int = 0x76, timeout: float = 2.0):
+    def __init__(self, i2c_bus: int = 1, timeout: float = 2.0):
         """Initialize environmental sensor reader.
 
         Args:
-            address: I2C address of BME688 sensor (0x76 or 0x77)
+            i2c_bus: I2C bus number (1 for Raspberry Pi pins 3 & 5)
             timeout: Maximum seconds to wait for sensor read
         """
         self.timeout = timeout
         self.sensor: Optional[bme680.BME680] = None
+        self.detected_address: Optional[int] = None
 
-        # Check if bme680 library available
-        if bme680 is None:
+        # Check if bme680 and smbus2 libraries available
+        if not BME680_AVAILABLE:
             logger.warning(
-                "bme680 library not installed - environmental sensor unavailable"
+                "bme680 or smbus2 library not installed - environmental sensor unavailable"
             )
             return
 
+        # Probe I2C bus to detect BME688 at 0x76 or 0x77
+        bus = None
         try:
-            # Initialize BME680 sensor
-            self.sensor = bme680.BME680(address)
+            bus = smbus2.SMBus(i2c_bus)
+
+            # Try both possible addresses (0x76 = SDO low, 0x77 = SDO high)
+            for address in (0x76, 0x77):
+                try:
+                    # Try to read chip ID register (0xD0) to verify sensor present
+                    bus.read_byte_data(address, 0xD0)
+                    self.detected_address = address
+                    logger.debug(f"BME688 detected at I2C address 0x{address:02x}")
+                    break
+                except OSError:
+                    continue
+
+            if bus is not None:
+                bus.close()
+                bus = None
+
+            if self.detected_address is None:
+                logger.warning(
+                    "Environmental sensor not detected at I2C address 0x76 or 0x77 "
+                    "(check wiring and I2C enabled)"
+                )
+                return
+
+            # Initialize BME680 sensor using library constants
+            if self.detected_address == 0x76:
+                self.sensor = bme680.BME680(bme680.I2C_ADDR_PRIMARY)
+            else:
+                self.sensor = bme680.BME680(bme680.I2C_ADDR_SECONDARY)
+
+            # Set temperature offset
+            self.sensor.set_temp_offset(0)
 
             # Configure sensor for indoor environmental monitoring
             # Temperature oversampling (OS_8X = accurate, slower)
@@ -77,18 +114,28 @@ class EnvironmentalSensorReader:
             self.sensor.select_gas_heater_profile(0)
 
             logger.info(
-                f"Environmental sensor initialized successfully at I2C address 0x{address:02x}"
+                f"Environmental sensor initialized successfully at I2C address 0x{self.detected_address:02x}"
             )
 
         except IOError as e:
             logger.warning(
-                f"Environmental sensor not detected at I2C address 0x{address:02x}: {e}"
+                f"I2C communication error during environmental sensor initialization: {e}"
             )
+            if bus is not None:
+                try:
+                    bus.close()
+                except Exception:
+                    pass
             self.sensor = None
         except Exception as e:
             logger.error(
                 f"Unexpected error initializing environmental sensor: {e}"
             )
+            if bus is not None:
+                try:
+                    bus.close()
+                except Exception:
+                    pass
             self.sensor = None
 
     def is_available(self) -> bool:
