@@ -20,6 +20,7 @@ from src.lib.database import (
     set_needs_watering_flag,
     record_watering_event,
     check_unmapped_sensors,
+    persist_environmental_reading,
     DEFAULT_DB_PATH
 )
 
@@ -328,8 +329,28 @@ class MoistureMonitor:
                     # Display environmental data with 2 decimal places
                     env_display = env_reading.format_for_display()
                     logger.info(f"Environment: {env_display}")
+
+                    # Persist environmental reading to database (Feature 004: Web Dashboard)
+                    persist_environmental_reading(
+                        timestamp=env_reading.timestamp,
+                        temperature=env_reading.temperature,
+                        humidity=env_reading.humidity,
+                        pressure=env_reading.pressure,
+                        gas_resistance=env_reading.gas_resistance,
+                        db_path=self.db_path
+                    )
                 else:
                     logger.warning("Environment: UNAVAILABLE (sensor read failed)")
+
+                    # Persist with NULL values to indicate sensor unavailability
+                    persist_environmental_reading(
+                        timestamp=datetime.now(),
+                        temperature=None,
+                        humidity=None,
+                        pressure=None,
+                        gas_resistance=None,
+                        db_path=self.db_path
+                    )
 
             except Exception as e:
                 logger.error(f"Environmental sensor read error: {e}")

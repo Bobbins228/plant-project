@@ -1,0 +1,442 @@
+openapi: 3.0.3
+info:
+  title: Plant Monitoring Dashboard API
+  description: Local REST API for plant monitoring dashboard - manages plant profiles, environmental data, and image uploads
+  version: 1.0.0
+  contact:
+    name: Plant Project
+servers:
+  - url: http://localhost:5000
+    description: Local development server
+  - url: http://{raspberry_pi_ip}:5000
+    description: Raspberry Pi local network
+    variables:
+      raspberry_pi_ip:
+        default: "192.168.1.100"
+        description: Local IP address of Raspberry Pi
+
+tags:
+  - name: plants
+    description: Plant profile CRUD operations
+  - name: environmental
+    description: Environmental sensor data queries
+  - name: images
+    description: Plant image upload and management
+
+paths:
+  /api/plants:
+    get:
+      summary: List all plant profiles
+      tags: [plants]
+      description: Returns all plant profiles with current moisture levels and image paths
+      responses:
+        '200':
+          description: List of plant profiles
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  plants:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PlantProfile'
+              example:
+                plants:
+                  - id: 1
+                    plant_name: "Snake Plant"
+                    sensor_channel: 0
+                    acceptable_moisture_level: 40
+                    current_moisture_level: 42.5
+                    needs_watering: false
+                    last_watered_date: "2026-02-12"
+                    image_path: "plant_1.jpg"
+                  - id: 2
+                    plant_name: "Boston Fern"
+                    sensor_channel: 1
+                    acceptable_moisture_level: 45
+                    current_moisture_level: 38.0
+                    needs_watering: true
+                    last_watered_date: null
+                    image_path: null
+
+    post:
+      summary: Create new plant profile
+      tags: [plants]
+      description: Creates a new plant profile with name, sensor channel, and threshold
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [plant_name, sensor_channel, acceptable_moisture_level]
+              properties:
+                plant_name:
+                  type: string
+                  minLength: 1
+                  maxLength: 100
+                  example: "Money Plant"
+                sensor_channel:
+                  type: integer
+                  minimum: 0
+                  maximum: 3
+                  example: 2
+                acceptable_moisture_level:
+                  type: integer
+                  minimum: 0
+                  maximum: 100
+                  example: 35
+      responses:
+        '201':
+          description: Plant profile created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlantProfile'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                duplicate_channel:
+                  value:
+                    error: "Sensor channel 2 is already assigned to another plant"
+                invalid_threshold:
+                  value:
+                    error: "acceptable_moisture_level must be between 0 and 100"
+                duplicate_name:
+                  value:
+                    error: "Plant name 'Money Plant' already exists"
+
+  /api/plants/{plant_id}:
+    get:
+      summary: Get single plant profile
+      tags: [plants]
+      parameters:
+        - name: plant_id
+          in: path
+          required: true
+          schema:
+            type: integer
+          example: 1
+      responses:
+        '200':
+          description: Plant profile details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlantProfile'
+        '404':
+          description: Plant not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "Plant with ID 999 not found"
+
+    put:
+      summary: Update plant profile
+      tags: [plants]
+      parameters:
+        - name: plant_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                plant_name:
+                  type: string
+                  minLength: 1
+                  maxLength: 100
+                sensor_channel:
+                  type: integer
+                  minimum: 0
+                  maximum: 3
+                acceptable_moisture_level:
+                  type: integer
+                  minimum: 0
+                  maximum: 100
+              example:
+                plant_name: "Updated Snake Plant"
+                acceptable_moisture_level: 45
+      responses:
+        '200':
+          description: Plant profile updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlantProfile'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Plant not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    delete:
+      summary: Delete plant profile
+      tags: [plants]
+      parameters:
+        - name: plant_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: Plant profile deleted successfully
+        '400':
+          description: Cannot delete last plant
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "Cannot delete the last plant profile. At least one plant is required."
+        '404':
+          description: Plant not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/plants/{plant_id}/image:
+    post:
+      summary: Upload plant image
+      tags: [images]
+      parameters:
+        - name: plant_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [image]
+              properties:
+                image:
+                  type: string
+                  format: binary
+                  description: Image file (JPEG, PNG, GIF, WebP, max 10 MB)
+      responses:
+        '200':
+          description: Image uploaded successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  image_path:
+                    type: string
+                    example: "plant_1.jpg"
+                  message:
+                    type: string
+                    example: "Image uploaded successfully"
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                invalid_format:
+                  value:
+                    error: "Invalid file format. Accepted formats: JPEG, PNG, GIF, WebP"
+                file_too_large:
+                  value:
+                    error: "File size exceeds 10 MB limit"
+                no_file:
+                  value:
+                    error: "No image file provided"
+        '404':
+          description: Plant not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    delete:
+      summary: Remove plant image
+      tags: [images]
+      parameters:
+        - name: plant_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: Image removed successfully
+        '404':
+          description: Plant not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/environmental/latest:
+    get:
+      summary: Get latest environmental reading
+      tags: [environmental]
+      description: Returns the most recent environmental sensor reading
+      responses:
+        '200':
+          description: Latest environmental reading
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvironmentalReading'
+              example:
+                id: 123
+                timestamp: "2026-02-13T15:30:00Z"
+                temperature: 22.45
+                humidity: 55.67
+                pressure: 1013.25
+                gas_resistance: 12345.67
+        '204':
+          description: No environmental data available (sensor not connected or no readings yet)
+
+  /api/environmental/history:
+    get:
+      summary: Get environmental reading history
+      tags: [environmental]
+      description: Returns environmental readings from the last 60 minutes for graphing
+      responses:
+        '200':
+          description: List of environmental readings
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  readings:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/EnvironmentalReading'
+              example:
+                readings:
+                  - id: 120
+                    timestamp: "2026-02-13T14:30:00Z"
+                    temperature: 21.89
+                    humidity: 56.23
+                    pressure: 1013.10
+                    gas_resistance: 12200.45
+                  - id: 121
+                    timestamp: "2026-02-13T14:31:00Z"
+                    temperature: 21.92
+                    humidity: 56.18
+                    pressure: 1013.12
+                    gas_resistance: 12210.30
+                  - id: 123
+                    timestamp: "2026-02-13T15:30:00Z"
+                    temperature: 22.45
+                    humidity: 55.67
+                    pressure: 1013.25
+                    gas_resistance: 12345.67
+
+components:
+  schemas:
+    PlantProfile:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: Auto-incrementing plant ID
+          example: 1
+        plant_name:
+          type: string
+          description: User-assigned plant name
+          example: "Snake Plant"
+        sensor_channel:
+          type: integer
+          description: ADC sensor channel (0-3)
+          minimum: 0
+          maximum: 3
+          example: 0
+        acceptable_moisture_level:
+          type: integer
+          description: Moisture threshold percentage
+          minimum: 0
+          maximum: 100
+          example: 40
+        current_moisture_level:
+          type: number
+          nullable: true
+          description: Last measured moisture percentage (null if no readings yet)
+          example: 42.5
+        needs_watering:
+          type: boolean
+          description: True if moisture below threshold
+          example: false
+        last_watered_date:
+          type: string
+          format: date
+          nullable: true
+          description: Date of last detected watering (null if never watered)
+          example: "2026-02-12"
+        image_path:
+          type: string
+          nullable: true
+          description: Relative path to plant image (null if no image uploaded)
+          example: "plant_1.jpg"
+
+    EnvironmentalReading:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: Auto-incrementing reading ID
+          example: 123
+        timestamp:
+          type: string
+          format: date-time
+          description: ISO 8601 timestamp (UTC)
+          example: "2026-02-13T15:30:00Z"
+        temperature:
+          type: number
+          nullable: true
+          description: Temperature in °C (null if sensor unavailable)
+          example: 22.45
+        humidity:
+          type: number
+          nullable: true
+          description: Relative humidity percentage (null if sensor unavailable)
+          example: 55.67
+        pressure:
+          type: number
+          nullable: true
+          description: Atmospheric pressure in hPa (null if sensor unavailable)
+          example: 1013.25
+        gas_resistance:
+          type: number
+          nullable: true
+          description: Gas resistance in Ω (null if sensor unavailable)
+          example: 12345.67
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Human-readable error message
+          example: "Validation error message"
