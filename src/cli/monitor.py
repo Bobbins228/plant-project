@@ -11,6 +11,12 @@ import logging.handlers
 from pathlib import Path
 from typing import NoReturn
 
+# Add project root to Python path to allow imports when run directly
+# This allows running the script as: python3 src/cli/monitor.py
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 from src.lib.config import MonitorConfig
 from src.lib.moisture_monitor import MoistureMonitor
 
