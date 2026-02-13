@@ -89,6 +89,27 @@ class MoistureMonitor:
             logger.warning(f"Database unavailable ({e}), using hardcoded plant defaults")
             self._init_default_plants()
 
+        # Initialize sensor reader (only on Raspberry Pi)
+        if SENSOR_AVAILABLE:
+            try:
+                self.sensor = SensorReader(
+                    address=self.config.ads1115_address,
+                    gain=self.config.ads1115_gain,
+                    voltage_dry=self.config.moisture_voltage_dry,
+                    voltage_wet=self.config.moisture_voltage_wet
+                )
+                logger.info("Sensor reader initialized successfully")
+            except Exception as e:
+                logger.error(f"Failed to initialize sensor reader: {e}")
+                self.sensor = None
+        else:
+            logger.warning("Sensor reader not available (I2C libraries not found)")
+            self.sensor = None
+
+        # Initialize ntfy.sh client
+        self.notifier = NtfyClient(base_url=self.config.ntfy_url, max_retries=3)
+        logger.info(f"Notification client initialized (topic: {self.config.ntfy_topic})")
+
     def _init_default_plants(self):
         """Initialize hardcoded default plants (fallback when database unavailable)."""
         self.plants = [
@@ -108,27 +129,6 @@ class MoistureMonitor:
                 min_moisture_threshold=self.config.moisture_threshold
             ),
         ]
-
-        # Initialize sensor reader (only on Raspberry Pi)
-        if SENSOR_AVAILABLE:
-            try:
-                self.sensor = SensorReader(
-                    address=config.ads1115_address,
-                    gain=config.ads1115_gain,
-                    voltage_dry=config.moisture_voltage_dry,
-                    voltage_wet=config.moisture_voltage_wet
-                )
-                logger.info("Sensor reader initialized successfully")
-            except Exception as e:
-                logger.error(f"Failed to initialize sensor reader: {e}")
-                self.sensor = None
-        else:
-            logger.warning("Sensor reader not available (I2C libraries not found)")
-            self.sensor = None
-
-        # Initialize ntfy.sh client
-        self.notifier = NtfyClient(base_url=config.ntfy_url, max_retries=3)
-        logger.info(f"Notification client initialized (topic: {config.ntfy_topic})")
 
     def read_sensors(self) -> List[SensorReading]:
         """Read moisture from all plant sensors.

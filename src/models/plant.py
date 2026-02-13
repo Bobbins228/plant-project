@@ -13,14 +13,14 @@ class Plant:
     and runtime state (current moisture, last notification time).
 
     Attributes:
-        id: Plant identifier ("Plant-A", "Plant-B", "Plant-C")
+        id: Plant identifier (custom name from database or "Plant-A/B/C" for defaults)
         ads_channel: ADS1115 ADC channel number (0, 1, or 2)
         min_moisture_threshold: Minimum acceptable moisture percentage (default 40.0)
         current_moisture: Most recent moisture reading (0-100%), None if invalid/no reading
         last_notification_time: Timestamp of last watering notification, None if never notified
     """
 
-    id: str  # "Plant-A", "Plant-B", "Plant-C"
+    id: str  # Custom plant name (e.g., "Basil", "Snake Plant") or "Plant-A/B/C"
     ads_channel: int  # 0, 1, 2
     min_moisture_threshold: float = 40.0  # percentage
     current_moisture: Optional[float] = None  # percentage or None
@@ -28,8 +28,9 @@ class Plant:
 
     def __post_init__(self):
         """Validate plant configuration after initialization."""
-        if self.id not in ("Plant-A", "Plant-B", "Plant-C"):
-            raise ValueError(f"Invalid plant ID: {self.id}. Must be Plant-A, Plant-B, or Plant-C")
+        # Allow any non-empty string for plant ID (supports custom plant names)
+        if not self.id or not isinstance(self.id, str) or not self.id.strip():
+            raise ValueError(f"Invalid plant ID: '{self.id}'. Must be a non-empty string")
 
         if self.ads_channel not in (0, 1, 2):
             raise ValueError(f"Invalid ADS channel: {self.ads_channel}. Must be 0, 1, or 2")
