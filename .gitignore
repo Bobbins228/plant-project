@@ -28,6 +28,9 @@ ENV/
 .env
 config/monitor.env
 
+# Database files
+data/*.db
+
 # Testing
 .pytest_cache/
 .coverage

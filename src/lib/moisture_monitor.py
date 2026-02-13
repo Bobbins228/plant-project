@@ -4,7 +4,7 @@ Implements the main monitoring loop that reads sensors, checks thresholds,
 sends notifications, and manages throttle timers.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from typing import List, Dict, Any, Optional
 import logging
 
@@ -13,6 +13,15 @@ from src.models.sensor_reading import SensorReading
 from src.models.notification_event import NotificationEvent
 from src.lib.config import MonitorConfig
 from src.lib.notifier import NtfyClient
+from src.lib.database import (
+    load_all_profiles,
+    load_profile_by_channel,
+    update_current_moisture,
+    set_needs_watering_flag,
+    record_watering_event,
+    check_unmapped_sensors,
+    DEFAULT_DB_PATH
+)
 
 try:
     from src.lib.sensor import SensorReader
@@ -32,30 +41,71 @@ class MoistureMonitor:
     for multiple plants with independent throttle timers.
     """
 
-    def __init__(self, config: MonitorConfig):
+    def __init__(self, config: MonitorConfig, db_path: str = DEFAULT_DB_PATH):
         """Initialize moisture monitor.
 
         Args:
             config: System configuration
+            db_path: Path to SQLite database file (optional, defaults to data/plants.db)
         """
         self.config = config
+        self.db_path = db_path
 
-        # Initialize plants (hardcoded for MVP, future: load from database)
-        self.plants: List[Plant] = [
+        # Log database file location
+        logger.info(f"Using database: {db_path}")
+
+        # Initialize plants from database with fallback to hardcoded defaults
+        self.plants: List[Plant] = []
+
+        try:
+            # Attempt to load plant profiles from database
+            profiles = load_all_profiles(db_path)
+
+            if profiles:
+                # Convert PlantProfile objects to Plant objects for monitoring
+                for profile in profiles:
+                    plant = Plant(
+                        id=profile.plant_name,
+                        ads_channel=profile.sensor_channel,
+                        min_moisture_threshold=profile.acceptable_moisture_level
+                    )
+                    # Restore current state from database
+                    if profile.current_moisture_level is not None:
+                        plant.current_moisture = profile.current_moisture_level
+                    self.plants.append(plant)
+
+                logger.info(f"Loaded {len(profiles)} plant profiles from database")
+
+                # Check for unmapped sensors and log warnings
+                check_unmapped_sensors(db_path)
+            else:
+                # Database exists but no profiles yet - warn user
+                logger.warning("No plant profiles found in database. Use setup_plants.py to create profiles.")
+                logger.warning("Falling back to hardcoded plant defaults")
+                self._init_default_plants()
+
+        except Exception as e:
+            # Database unavailable - fall back to hardcoded defaults (FR-005)
+            logger.warning(f"Database unavailable ({e}), using hardcoded plant defaults")
+            self._init_default_plants()
+
+    def _init_default_plants(self):
+        """Initialize hardcoded default plants (fallback when database unavailable)."""
+        self.plants = [
             Plant(
                 id='Plant-A',
                 ads_channel=0,
-                min_moisture_threshold=config.moisture_threshold
+                min_moisture_threshold=self.config.moisture_threshold
             ),
             Plant(
                 id='Plant-B',
                 ads_channel=1,
-                min_moisture_threshold=config.moisture_threshold
+                min_moisture_threshold=self.config.moisture_threshold
             ),
             Plant(
                 id='Plant-C',
                 ads_channel=2,
-                min_moisture_threshold=config.moisture_threshold
+                min_moisture_threshold=self.config.moisture_threshold
             ),
         ]
 
@@ -114,6 +164,9 @@ class MoistureMonitor:
                 if reading.is_valid and moisture is not None:
                     plant.current_moisture = moisture
                     logger.debug(f"{plant.id}: {moisture:.1f}% (voltage: {voltage:.3f}V)")
+
+                    # Update current moisture in database (non-blocking, FR-017)
+                    update_current_moisture(plant.id, moisture, self.db_path)
                 else:
                     voltage_str = f"{voltage:.3f}V" if voltage is not None else "None"
                     moisture_str = f"{moisture:.1f}%" if moisture is not None else "None"
@@ -132,7 +185,7 @@ class MoistureMonitor:
         """Check which plants need watering.
 
         Also handles throttle reset when plants are watered (moisture rises above
-        threshold + 5% hysteresis buffer).
+        threshold + 5% hysteresis buffer) and records watering events.
 
         Returns:
             List of plants that need water
@@ -144,13 +197,27 @@ class MoistureMonitor:
             if (plant.current_moisture is not None and
                 plant.current_moisture > plant.throttle_reset_threshold and
                 plant.last_notification_time is not None):
-                logger.info(f"{plant.id}: OK - throttle reset (moisture: {plant.current_moisture:.1f}%)")
+                logger.info(
+                    f"{plant.id}: Watering detected - moisture rose to {plant.current_moisture:.1f}% "
+                    f"(above {plant.throttle_reset_threshold:.1f}% reset threshold)"
+                )
                 plant.last_notification_time = None
+
+                # Record watering event in database (FR-009: detect threshold crossings)
+                today = date.today()
+                record_watering_event(plant.id, today, self.db_path)
+                logger.info(f"{plant.id}: Recorded watering event on {today.isoformat()}")
+
+                # Update needs_watering flag to False (plant no longer needs water)
+                set_needs_watering_flag(plant.id, False, self.db_path)
 
             # Check if plant needs water
             if plant.needs_water:
                 plants_needing_water.append(plant)
                 logger.debug(f"{plant.id}: Needs water (moisture: {plant.current_moisture:.1f}%)")
+
+                # Update needs_watering flag to True in database
+                set_needs_watering_flag(plant.id, True, self.db_path)
 
         return plants_needing_water
 
