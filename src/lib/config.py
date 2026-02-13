@@ -156,8 +156,8 @@ class MonitorConfig:
 
         config = cls(
             moisture_threshold=get_float("MOISTURE_THRESHOLD", 40.0),
-            moisture_voltage_dry=get_float("MOISTURE_VOLTAGE_DRY", 3.0),
-            moisture_voltage_wet=get_float("MOISTURE_VOLTAGE_WET", 1.6),
+            moisture_voltage_dry=get_float("MOISTURE_VOLTAGE_DRY", 1.2),
+            moisture_voltage_wet=get_float("MOISTURE_VOLTAGE_WET", 0.5),
             sampling_interval=get_int("SAMPLING_INTERVAL", 30),
             throttle_duration=get_int("THROTTLE_DURATION", 21600),  # 6 hours
             ntfy_topic=get_str("NTFY_TOPIC", "mark-test-watering-monitor"),
