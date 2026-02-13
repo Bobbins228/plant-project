@@ -10,7 +10,7 @@ import logging
 from contextlib import contextmanager
 from pathlib import Path
 from typing import List, Optional
-from datetime import date
+from datetime import date, datetime
 
 from src.models.plant_profile import PlantProfile
 
@@ -87,7 +87,7 @@ def initialize_database(db_path: str = DEFAULT_DB_PATH) -> None:
                     date_last_watered TEXT,
 
                     -- Constraints
-                    CHECK (sensor_channel IN (0, 1, 2)),
+                    CHECK (sensor_channel IN (0, 1, 2, 3)),
                     CHECK (acceptable_moisture_level >= 0.0 AND acceptable_moisture_level <= 100.0),
                     CHECK (current_moisture_level IS NULL OR (current_moisture_level >= 0.0 AND current_moisture_level <= 100.0))
                 )
@@ -166,7 +166,8 @@ def load_all_profiles(db_path: str = DEFAULT_DB_PATH) -> List[PlantProfile]:
                     acceptable_moisture_level,
                     current_moisture_level,
                     needs_watering,
-                    date_last_watered
+                    date_last_watered,
+                    image_path
                 FROM plant_profiles
                 ORDER BY sensor_channel
             """)
@@ -207,7 +208,8 @@ def load_profile_by_channel(
                     acceptable_moisture_level,
                     current_moisture_level,
                     needs_watering,
-                    date_last_watered
+                    date_last_watered,
+                    image_path
                 FROM plant_profiles
                 WHERE sensor_channel = ?
             """, (sensor_channel,))
@@ -334,7 +336,7 @@ def record_watering_event(
 def check_unmapped_sensors(db_path: str = DEFAULT_DB_PATH) -> List[int]:
     """Check for unmapped sensor channels and log warnings.
 
-    Scans all valid sensor channels (0, 1, 2) and logs warnings
+    Scans all valid sensor channels (0, 1, 2, 3) and logs warnings
     for any channels not assigned to plant profiles.
 
     Args:
@@ -347,7 +349,7 @@ def check_unmapped_sensors(db_path: str = DEFAULT_DB_PATH) -> List[int]:
         This function is intended to be called at monitoring startup
         to warn users about sensors that won't be monitored.
     """
-    all_channels = [0, 1, 2]
+    all_channels = [0, 1, 2, 3]
     unmapped_channels = []
 
     try:
@@ -365,9 +367,199 @@ def check_unmapped_sensors(db_path: str = DEFAULT_DB_PATH) -> List[int]:
         if unmapped_channels:
             logger.info(f"Unmapped sensor channels: {unmapped_channels}")
         else:
-            logger.info("All sensor channels (0, 1, 2) are assigned to plant profiles")
+            logger.info("All sensor channels (0, 1, 2, 3) are assigned to plant profiles")
 
     except sqlite3.Error as e:
         logger.error(f"Failed to check unmapped sensors: {e}")
 
     return unmapped_channels
+
+
+# Environmental Data Functions (Feature 004: Web Dashboard)
+
+
+def persist_environmental_reading(
+    timestamp: datetime,
+    temperature: Optional[float],
+    humidity: Optional[float],
+    pressure: Optional[float],
+    gas_resistance: Optional[float],
+    db_path: str = DEFAULT_DB_PATH
+) -> bool:
+    """Persist environmental sensor reading to database.
+
+    Stores a single environmental reading with timestamp. Automatically
+    cleans up readings older than 1 hour after insertion.
+
+    Args:
+        timestamp: Reading timestamp (datetime object)
+        temperature: Temperature in °C (None if sensor unavailable)
+        humidity: Relative humidity % (None if sensor unavailable)
+        pressure: Atmospheric pressure hPa (None if sensor unavailable)
+        gas_resistance: Gas resistance Ω (None if sensor unavailable)
+        db_path: Path to SQLite database file
+
+    Returns:
+        True if successful, False on error
+
+    Note:
+        Logs errors but does not raise exceptions to allow
+        monitoring to continue on database failures.
+    """
+    try:
+        with get_db_connection(db_path) as conn:
+            conn.execute("""
+                INSERT INTO environmental_readings (
+                    timestamp,
+                    temperature,
+                    humidity,
+                    pressure,
+                    gas_resistance
+                ) VALUES (?, ?, ?, ?, ?)
+            """, (
+                timestamp.isoformat(),
+                temperature,
+                humidity,
+                pressure,
+                gas_resistance
+            ))
+            conn.commit()
+            logger.debug(f"Persisted environmental reading: {timestamp.isoformat()}")
+
+            # Cleanup old readings (>1 hour)
+            cleanup_old_environmental_readings(db_path)
+
+            return True
+    except sqlite3.IntegrityError:
+        # Duplicate timestamp - this can happen if monitoring cycle runs very fast
+        logger.warning(f"Duplicate environmental reading timestamp: {timestamp.isoformat()}")
+        return False
+    except sqlite3.Error as e:
+        logger.error(f"Failed to persist environmental reading: {e}")
+        return False
+
+
+def get_latest_environmental_reading(
+    db_path: str = DEFAULT_DB_PATH
+) -> Optional[dict]:
+    """Get the most recent environmental reading.
+
+    Args:
+        db_path: Path to SQLite database file
+
+    Returns:
+        Dict with keys: id, timestamp, temperature, humidity, pressure, gas_resistance
+        None if no readings exist
+
+    Raises:
+        sqlite3.Error: If database read fails
+    """
+    try:
+        with get_db_connection(db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT
+                    id,
+                    timestamp,
+                    temperature,
+                    humidity,
+                    pressure,
+                    gas_resistance
+                FROM environmental_readings
+                ORDER BY timestamp DESC
+                LIMIT 1
+            """)
+            row = cursor.fetchone()
+
+            if row:
+                reading = dict(row)
+                logger.debug(f"Retrieved latest environmental reading: {reading['timestamp']}")
+                return reading
+            else:
+                logger.debug("No environmental readings found")
+                return None
+
+    except sqlite3.Error as e:
+        logger.error(f"Failed to get latest environmental reading: {e}")
+        raise
+
+
+def get_environmental_history(
+    hours: int = 1,
+    db_path: str = DEFAULT_DB_PATH
+) -> List[dict]:
+    """Get environmental readings from the last N hours.
+
+    Args:
+        hours: Number of hours of history to retrieve (default: 1)
+        db_path: Path to SQLite database file
+
+    Returns:
+        List of dicts (oldest first) with keys: id, timestamp, temperature,
+        humidity, pressure, gas_resistance
+
+    Raises:
+        sqlite3.Error: If database read fails
+    """
+    try:
+        with get_db_connection(db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT
+                    id,
+                    timestamp,
+                    temperature,
+                    humidity,
+                    pressure,
+                    gas_resistance
+                FROM environmental_readings
+                WHERE timestamp > datetime('now', '-' || ? || ' hours')
+                ORDER BY timestamp ASC
+            """, (hours,))
+            rows = cursor.fetchall()
+
+            readings = [dict(row) for row in rows]
+            logger.debug(f"Retrieved {len(readings)} environmental readings from last {hours} hour(s)")
+            return readings
+
+    except sqlite3.Error as e:
+        logger.error(f"Failed to get environmental history: {e}")
+        raise
+
+
+def cleanup_old_environmental_readings(
+    db_path: str = DEFAULT_DB_PATH
+) -> int:
+    """Delete environmental readings older than 1 hour.
+
+    This function is called automatically after each new reading
+    is persisted to maintain a rolling 60-minute window.
+
+    Args:
+        db_path: Path to SQLite database file
+
+    Returns:
+        Number of rows deleted
+
+    Note:
+        Logs errors but does not raise exceptions to allow
+        monitoring to continue on cleanup failures.
+    """
+    try:
+        with get_db_connection(db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                DELETE FROM environmental_readings
+                WHERE timestamp < datetime('now', '-1 hour')
+            """)
+            deleted_count = cursor.rowcount
+            conn.commit()
+
+            if deleted_count > 0:
+                logger.debug(f"Cleaned up {deleted_count} old environmental reading(s)")
+
+            return deleted_count
+
+    except sqlite3.Error as e:
+        logger.error(f"Failed to cleanup old environmental readings: {e}")
+        return 0

@@ -1,0 +1,26 @@
+[Unit]
+Description=Plant Monitoring Dashboard Web Server
+Documentation=file:///Users/mcampbel/plant-project/specs/004-web-dashboard/quickstart.md
+After=network.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/plant-project
+Environment="PATH=/home/pi/plant-project/.venv/bin"
+ExecStart=/home/pi/plant-project/.venv/bin/gunicorn -w 2 -b 0.0.0.0:5000 src.lib.web_server:app
+Restart=always
+RestartSec=10
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=plant-dashboard
+
+[Install]
+WantedBy=multi-user.target

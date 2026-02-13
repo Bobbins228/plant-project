@@ -25,12 +25,13 @@ class PlantProfile:
     current_moisture_level: Optional[float] = None
     needs_watering: bool = False
     date_last_watered: Optional[date] = None
+    image_path: Optional[str] = None  # Path to plant image (feature 004)
 
     def __post_init__(self):
         """Validate attributes after initialization."""
         # Validate sensor channel
-        if self.sensor_channel not in (0, 1, 2):
-            raise ValueError(f"sensor_channel must be 0, 1, or 2, got {self.sensor_channel}")
+        if self.sensor_channel not in (0, 1, 2, 3):
+            raise ValueError(f"sensor_channel must be 0-3, got {self.sensor_channel}")
 
         # Validate acceptable moisture level
         if not 0.0 <= self.acceptable_moisture_level <= 100.0:
@@ -69,5 +70,6 @@ class PlantProfile:
             current_moisture_level=row["current_moisture_level"],
             needs_watering=bool(row["needs_watering"]),
             date_last_watered=date.fromisoformat(row["date_last_watered"])
-                if row["date_last_watered"] else None
+                if row["date_last_watered"] else None,
+            image_path=row.get("image_path")  # Optional field (feature 004)
         )

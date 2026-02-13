@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Plant Monitoring Dashboard</title>
+    <link rel="stylesheet" href="/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🌱 Plant Monitoring Dashboard</h1>
+            <div class="last-updated">
+                Last updated: <span id="last-updated-time">Loading...</span>
+            </div>
+        </header>
+
+        <!-- Environmental Panel -->
+        <section class="environmental-panel">
+            <h2>Environmental Conditions</h2>
+            <div class="env-grid">
+                <div class="env-card">
+                    <div class="env-label">Temperature</div>
+                    <div class="env-value" id="env-temperature">--</div>
+                    <div class="env-unit">°C</div>
+                </div>
+                <div class="env-card">
+                    <div class="env-label">Humidity</div>
+                    <div class="env-value" id="env-humidity">--</div>
+                    <div class="env-unit">%</div>
+                </div>
+                <div class="env-card">
+                    <div class="env-label">Pressure</div>
+                    <div class="env-value" id="env-pressure">--</div>
+                    <div class="env-unit">hPa</div>
+                </div>
+                <div class="env-card">
+                    <div class="env-label">Gas</div>
+                    <div class="env-value" id="env-gas">--</div>
+                    <div class="env-unit">Ω</div>
+                </div>
+            </div>
+            <div class="env-status" id="env-status"></div>
+        </section>
+
+        <!-- Environmental History Graph -->
+        <section class="graph-section">
+            <h2>Environmental History (Last 60 Minutes)</h2>
+            <div class="graph-container">
+                <canvas id="env-history-chart"></canvas>
+                <div class="no-data-message" id="graph-no-data" style="display: none;">
+                    <p>No environmental data available yet.</p>
+                    <p class="hint">Data will appear once the monitoring system starts collecting readings.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Plant Cards Grid -->
+        <section class="plants-section">
+            <div class="section-header">
+                <h2>Plant Status</h2>
+                <button class="btn btn-primary" id="add-plant-btn">+ Add Plant</button>
+            </div>
+            <div class="plants-grid" id="plants-grid">
+                <!-- Plant cards will be dynamically inserted here -->
+            </div>
+            <div class="error-message" id="error-message" style="display: none;"></div>
+        </section>
+
+        <!-- Stale Data Warning -->
+        <div class="warning-banner" id="stale-warning" style="display: none;">
+            ⚠️ Monitoring system appears stopped (no updates in >5 minutes)
+        </div>
+    </div>
+
+    <!-- Add Plant Modal -->
+    <div class="modal" id="add-plant-modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Add New Plant</h3>
+                <button class="modal-close" id="add-modal-close">&times;</button>
+            </div>
+            <form id="add-plant-form">
+                <div class="form-group">
+                    <label for="add-plant-name">Plant Name *</label>
+                    <input type="text" id="add-plant-name" required maxlength="100">
+                </div>
+                <div class="form-group">
+                    <label for="add-sensor-channel">Sensor Channel (0-3) *</label>
+                    <input type="number" id="add-sensor-channel" required min="0" max="3" step="1">
+                </div>
+                <div class="form-group">
+                    <label for="add-moisture-threshold">Moisture Threshold (%) *</label>
+                    <input type="number" id="add-moisture-threshold" required min="0" max="100" step="1">
+                </div>
+                <div class="form-error" id="add-form-error" style="display: none;"></div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" id="add-cancel-btn">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Plant</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Edit Plant Modal -->
+    <div class="modal" id="edit-plant-modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Edit Plant</h3>
+                <button class="modal-close" id="edit-modal-close">&times;</button>
+            </div>
+            <form id="edit-plant-form">
+                <input type="hidden" id="edit-plant-id">
+
+                <!-- Plant Image Section -->
+                <div class="form-group">
+                    <label>Plant Image</label>
+                    <div class="image-preview-container">
+                        <div class="image-preview" id="edit-image-preview">
+                            <div class="image-placeholder">🌿</div>
+                        </div>
+                        <div class="image-controls">
+                            <input type="file" id="edit-image-input" accept="image/jpeg,image/png,image/gif,image/webp" style="display: none;">
+                            <button type="button" class="btn btn-secondary" id="upload-image-btn">Upload Image</button>
+                            <button type="button" class="btn btn-secondary" id="remove-image-btn" style="display: none;">Remove Image</button>
+                        </div>
+                        <div class="image-hint">JPEG, PNG, GIF, WebP (max 10 MB)</div>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="edit-plant-name">Plant Name *</label>
+                    <input type="text" id="edit-plant-name" required maxlength="100">
+                </div>
+                <div class="form-group">
+                    <label for="edit-sensor-channel">Sensor Channel (0-3) *</label>
+                    <input type="number" id="edit-sensor-channel" required min="0" max="3" step="1">
+                </div>
+                <div class="form-group">
+                    <label for="edit-moisture-threshold">Moisture Threshold (%) *</label>
+                    <input type="number" id="edit-moisture-threshold" required min="0" max="100" step="1">
+                </div>
+                <div class="form-error" id="edit-form-error" style="display: none;"></div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-danger" id="delete-plant-btn">Delete Plant</button>
+                    <div style="flex: 1;"></div>
+                    <button type="button" class="btn btn-secondary" id="edit-cancel-btn">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="/app.js"></script>
+</body>
+</html>
