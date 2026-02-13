@@ -116,11 +116,11 @@ class SensorReader:
             raise ValueError(f"Invalid channel: {channel}. Must be 0, 1, or 2")
 
         try:
-            # Read raw ADC value from channel (single-ended)
-            raw_adc = self.ads.readADCSingleEnded(channel)
+            # Read raw ADC value from channel
+            raw_adc = self.ads.readADC(channel)
 
             # Convert raw ADC value to voltage
-            # ADS1115 returns raw values 0-32767 for single-ended positive inputs
+            # ADS1115 is 16-bit: 0-32767 for positive single-ended inputs
             # Voltage = (raw / 32768) * voltage_range
             voltage = (raw_adc / 32768.0) * self.voltage_range
 
