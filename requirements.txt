@@ -1,0 +1,15 @@
+# Plant Monitoring System Dependencies
+# Python 3.9+ required
+
+# I2C sensor communication (ADS1115 ADC)
+ADS1x15-ADC
+
+# HTTP requests for ntfy.sh API
+requests==2.31.0
+
+# Environment variable configuration
+python-dotenv==1.0.0
+
+# Testing
+pytest==7.4.0
+pytest-mock==3.11.1
