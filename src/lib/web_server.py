@@ -78,7 +78,7 @@ def create_app(db_path: str = DEFAULT_DB_PATH) -> Flask:
                     'acceptable_moisture_level': profile.acceptable_moisture_level,
                     'current_moisture_level': profile.current_moisture_level,
                     'needs_watering': bool(profile.needs_watering),
-                    'last_watered_date': profile.last_watered_date.isoformat() if profile.last_watered_date else None,
+                    'last_watered_date': profile.date_last_watered.isoformat() if profile.date_last_watered else None,
                     'image_path': profile.image_path
                 }
                 plants.append(plant_dict)
@@ -116,7 +116,7 @@ def create_app(db_path: str = DEFAULT_DB_PATH) -> Flask:
                         'acceptable_moisture_level': profile.acceptable_moisture_level,
                         'current_moisture_level': profile.current_moisture_level,
                         'needs_watering': bool(profile.needs_watering),
-                        'last_watered_date': profile.last_watered_date.isoformat() if profile.last_watered_date else None,
+                        'last_watered_date': profile.date_last_watered.isoformat() if profile.date_last_watered else None,
                         'image_path': profile.image_path
                     }
                     logger.info(f"Retrieved plant: {plant_id}")
@@ -192,7 +192,7 @@ def create_app(db_path: str = DEFAULT_DB_PATH) -> Flask:
                         'acceptable_moisture_level': profile.acceptable_moisture_level,
                         'current_moisture_level': profile.current_moisture_level,
                         'needs_watering': bool(profile.needs_watering),
-                        'last_watered_date': profile.last_watered_date.isoformat() if profile.last_watered_date else None,
+                        'last_watered_date': profile.date_last_watered.isoformat() if profile.date_last_watered else None,
                         'image_path': profile.image_path
                     }
                     logger.info(f"Created plant: {plant_name}")
@@ -299,7 +299,7 @@ def create_app(db_path: str = DEFAULT_DB_PATH) -> Flask:
                         'acceptable_moisture_level': profile.acceptable_moisture_level,
                         'current_moisture_level': profile.current_moisture_level,
                         'needs_watering': bool(profile.needs_watering),
-                        'last_watered_date': profile.last_watered_date.isoformat() if profile.last_watered_date else None,
+                        'last_watered_date': profile.date_last_watered.isoformat() if profile.date_last_watered else None,
                         'image_path': profile.image_path
                     }
                     logger.info(f"Updated plant: {plant_id}")
