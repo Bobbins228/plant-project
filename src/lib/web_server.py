@@ -79,7 +79,7 @@ def create_app(db_path: str = DEFAULT_DB_PATH) -> Flask:
                     'current_moisture_level': profile.current_moisture_level,
                     'needs_watering': bool(profile.needs_watering),
                     'last_watered_date': profile.last_watered_date.isoformat() if profile.last_watered_date else None,
-                    'image_path': getattr(profile, 'image_path', None)
+                    'image_path': profile.image_path
                 }
                 plants.append(plant_dict)
 
@@ -117,7 +117,7 @@ def create_app(db_path: str = DEFAULT_DB_PATH) -> Flask:
                         'current_moisture_level': profile.current_moisture_level,
                         'needs_watering': bool(profile.needs_watering),
                         'last_watered_date': profile.last_watered_date.isoformat() if profile.last_watered_date else None,
-                        'image_path': getattr(profile, 'image_path', None)
+                        'image_path': profile.image_path
                     }
                     logger.info(f"Retrieved plant: {plant_id}")
                     return jsonify(plant_dict), 200
@@ -193,7 +193,7 @@ def create_app(db_path: str = DEFAULT_DB_PATH) -> Flask:
                         'current_moisture_level': profile.current_moisture_level,
                         'needs_watering': bool(profile.needs_watering),
                         'last_watered_date': profile.last_watered_date.isoformat() if profile.last_watered_date else None,
-                        'image_path': getattr(profile, 'image_path', None)
+                        'image_path': profile.image_path
                     }
                     logger.info(f"Created plant: {plant_name}")
                     return jsonify(plant_dict), 201
@@ -300,7 +300,7 @@ def create_app(db_path: str = DEFAULT_DB_PATH) -> Flask:
                         'current_moisture_level': profile.current_moisture_level,
                         'needs_watering': bool(profile.needs_watering),
                         'last_watered_date': profile.last_watered_date.isoformat() if profile.last_watered_date else None,
-                        'image_path': getattr(profile, 'image_path', None)
+                        'image_path': profile.image_path
                     }
                     logger.info(f"Updated plant: {plant_id}")
                     return jsonify(plant_dict), 200

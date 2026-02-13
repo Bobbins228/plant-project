@@ -87,7 +87,7 @@ def initialize_database(db_path: str = DEFAULT_DB_PATH) -> None:
                     date_last_watered TEXT,
 
                     -- Constraints
-                    CHECK (sensor_channel IN (0, 1, 2)),
+                    CHECK (sensor_channel IN (0, 1, 2, 3)),
                     CHECK (acceptable_moisture_level >= 0.0 AND acceptable_moisture_level <= 100.0),
                     CHECK (current_moisture_level IS NULL OR (current_moisture_level >= 0.0 AND current_moisture_level <= 100.0))
                 )
@@ -166,7 +166,8 @@ def load_all_profiles(db_path: str = DEFAULT_DB_PATH) -> List[PlantProfile]:
                     acceptable_moisture_level,
                     current_moisture_level,
                     needs_watering,
-                    date_last_watered
+                    date_last_watered,
+                    image_path
                 FROM plant_profiles
                 ORDER BY sensor_channel
             """)
@@ -207,7 +208,8 @@ def load_profile_by_channel(
                     acceptable_moisture_level,
                     current_moisture_level,
                     needs_watering,
-                    date_last_watered
+                    date_last_watered,
+                    image_path
                 FROM plant_profiles
                 WHERE sensor_channel = ?
             """, (sensor_channel,))
@@ -334,7 +336,7 @@ def record_watering_event(
 def check_unmapped_sensors(db_path: str = DEFAULT_DB_PATH) -> List[int]:
     """Check for unmapped sensor channels and log warnings.
 
-    Scans all valid sensor channels (0, 1, 2) and logs warnings
+    Scans all valid sensor channels (0, 1, 2, 3) and logs warnings
     for any channels not assigned to plant profiles.
 
     Args:
@@ -347,7 +349,7 @@ def check_unmapped_sensors(db_path: str = DEFAULT_DB_PATH) -> List[int]:
         This function is intended to be called at monitoring startup
         to warn users about sensors that won't be monitored.
     """
-    all_channels = [0, 1, 2]
+    all_channels = [0, 1, 2, 3]
     unmapped_channels = []
 
     try:
@@ -365,7 +367,7 @@ def check_unmapped_sensors(db_path: str = DEFAULT_DB_PATH) -> List[int]:
         if unmapped_channels:
             logger.info(f"Unmapped sensor channels: {unmapped_channels}")
         else:
-            logger.info("All sensor channels (0, 1, 2) are assigned to plant profiles")
+            logger.info("All sensor channels (0, 1, 2, 3) are assigned to plant profiles")
 
     except sqlite3.Error as e:
         logger.error(f"Failed to check unmapped sensors: {e}")
