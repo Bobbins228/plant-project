@@ -1,0 +1,15 @@
+# Plant Monitoring System Dependencies
+# Python 3.9+ required
+
+# I2C sensor communication
+adafruit-circuitpython-ads1x15==2.2.23
+
+# HTTP requests for ntfy.sh API
+requests==2.31.0
+
+# Environment variable configuration
+python-dotenv==1.0.0
+
+# Testing
+pytest==7.4.0
+pytest-mock==3.11.1
