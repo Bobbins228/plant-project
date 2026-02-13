@@ -96,18 +96,14 @@ class MoistureMonitor:
                 continue
 
             try:
-                # Read moisture from sensor
-                moisture = self.sensor.read_moisture(plant.ads_channel)
-
-                # Get raw values for logging
-                voltage = self.sensor.read_channel(plant.ads_channel)
-                raw_adc = 0  # Not easily accessible from AnalogIn, placeholder
+                # Read voltage and moisture from sensor (single ADC read)
+                voltage, moisture = self.sensor.read_moisture_with_voltage(plant.ads_channel)
 
                 # Create reading
                 reading = SensorReading(
                     plant_id=plant.id,
                     timestamp=timestamp,
-                    raw_adc_value=raw_adc,
+                    raw_adc_value=0,  # Not exposed by ADS1x15 library
                     voltage=voltage if voltage is not None else 0.0,
                     moisture_percent=moisture
                 )
@@ -119,9 +115,11 @@ class MoistureMonitor:
                     plant.current_moisture = moisture
                     logger.debug(f"{plant.id}: {moisture:.1f}% (voltage: {voltage:.3f}V)")
                 else:
+                    voltage_str = f"{voltage:.3f}V" if voltage is not None else "None"
+                    moisture_str = f"{moisture:.1f}%" if moisture is not None else "None"
                     logger.error(
-                        f"{plant.id}: Invalid reading (voltage: {voltage:.3f}V, "
-                        f"moisture: {moisture}%)"
+                        f"{plant.id}: Invalid reading (voltage: {voltage_str}, "
+                        f"moisture: {moisture_str})"
                     )
 
             except Exception as e:

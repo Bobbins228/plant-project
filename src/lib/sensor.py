@@ -116,11 +116,11 @@ class SensorReader:
             raise ValueError(f"Invalid channel: {channel}. Must be 0, 1, or 2")
 
         try:
-            # Read raw ADC value from channel
-            raw_adc = self.ads.readADC(channel)
+            # Read raw ADC value from channel (single-ended)
+            raw_adc = self.ads.readADCSingleEnded(channel)
 
             # Convert raw ADC value to voltage
-            # ADS1115 is 16-bit signed: -32768 to +32767
+            # ADS1115 returns raw values 0-32767 for single-ended positive inputs
             # Voltage = (raw / 32768) * voltage_range
             voltage = (raw_adc / 32768.0) * self.voltage_range
 
@@ -180,3 +180,22 @@ class SensorReader:
             return None
 
         return self.voltage_to_moisture(voltage)
+
+    def read_moisture_with_voltage(self, channel: int) -> tuple[Optional[float], Optional[float]]:
+        """Read channel once and return both voltage and moisture percentage.
+
+        More efficient than calling read_channel() and read_moisture() separately
+        as it only performs one ADC read.
+
+        Args:
+            channel: ADS1115 channel number (0, 1, or 2)
+
+        Returns:
+            Tuple of (voltage, moisture_percent). Either value can be None if read/conversion failed.
+        """
+        voltage = self.read_channel(channel)
+        if voltage is None:
+            return (None, None)
+
+        moisture = self.voltage_to_moisture(voltage)
+        return (voltage, moisture)
