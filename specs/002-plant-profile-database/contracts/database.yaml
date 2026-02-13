@@ -1,0 +1,350 @@
+# Database Contracts: Plant Profile CRUD Operations
+# Feature: 002-plant-profile-database
+# Phase: 1 (Design & Contracts)
+
+database:
+  name: plants.db
+  location: data/plants.db
+  engine: SQLite 3
+  schema_version: 1.0.0
+
+tables:
+  - name: plant_profiles
+    description: Store plant-specific configuration and monitoring state
+    columns:
+      - name: plant_name
+        type: TEXT
+        constraints: [PRIMARY KEY, NOT NULL]
+        description: User-defined plant identifier
+      - name: sensor_channel
+        type: INTEGER
+        constraints: [NOT NULL, UNIQUE]
+        description: ADS1115 ADC channel (0, 1, or 2)
+      - name: acceptable_moisture_level
+        type: REAL
+        constraints: [NOT NULL]
+        description: Moisture threshold percentage (0.0-100.0)
+      - name: current_moisture_level
+        type: REAL
+        constraints: [NULLABLE]
+        description: Most recent moisture reading percentage
+      - name: needs_watering
+        type: INTEGER
+        constraints: [NOT NULL, DEFAULT 0]
+        description: Boolean flag (0=false, 1=true)
+      - name: date_last_watered
+        type: TEXT
+        constraints: [NULLABLE]
+        description: ISO 8601 date (YYYY-MM-DD)
+    checks:
+      - sensor_channel IN (0, 1, 2)
+      - acceptable_moisture_level >= 0.0 AND acceptable_moisture_level <= 100.0
+      - current_moisture_level IS NULL OR (current_moisture_level >= 0.0 AND current_moisture_level <= 100.0)
+
+# CRUD Operation Contracts
+
+operations:
+  - name: initialize_database
+    type: DDL
+    description: Create database schema if not exists
+    sql: |
+      CREATE TABLE IF NOT EXISTS plant_profiles (
+          plant_name TEXT PRIMARY KEY,
+          sensor_channel INTEGER NOT NULL UNIQUE,
+          acceptable_moisture_level REAL NOT NULL,
+          current_moisture_level REAL,
+          needs_watering INTEGER NOT NULL DEFAULT 0,
+          date_last_watered TEXT,
+          CHECK (sensor_channel IN (0, 1, 2)),
+          CHECK (acceptable_moisture_level >= 0.0 AND acceptable_moisture_level <= 100.0),
+          CHECK (current_moisture_level IS NULL OR (current_moisture_level >= 0.0 AND current_moisture_level <= 100.0))
+      );
+    preconditions:
+      - Database file exists or can be created
+      - User has write permissions to data/ directory
+    postconditions:
+      - Table plant_profiles exists
+      - Schema matches version 1.0.0
+    errors:
+      - code: SQLITE_ERROR
+        message: Database file cannot be created
+        recovery: Log error, monitoring continues without database
+
+  - name: create_plant_profile
+    type: INSERT
+    description: Create new plant profile during setup
+    sql: |
+      INSERT INTO plant_profiles (
+          plant_name,
+          sensor_channel,
+          acceptable_moisture_level,
+          needs_watering
+      ) VALUES (?, ?, ?, 0);
+    parameters:
+      - name: plant_name
+        type: TEXT
+        constraints: Non-empty, ≤50 characters
+        example: "Basil"
+      - name: sensor_channel
+        type: INTEGER
+        constraints: Must be 0, 1, or 2
+        example: 0
+      - name: acceptable_moisture_level
+        type: REAL
+        constraints: 0.0 ≤ value ≤ 100.0
+        example: 45.0
+    preconditions:
+      - plant_name is unique (not already in database)
+      - sensor_channel is not already assigned to another plant
+      - acceptable_moisture_level is valid percentage
+    postconditions:
+      - New row inserted with needs_watering=0
+      - current_moisture_level is NULL
+      - date_last_watered is NULL
+    errors:
+      - code: SQLITE_CONSTRAINT_PRIMARYKEY
+        message: "Plant name '{plant_name}' already exists"
+        recovery: Prompt user for different name
+      - code: SQLITE_CONSTRAINT_UNIQUE
+        message: "Sensor channel {channel} already assigned to plant '{existing_plant}'"
+        recovery: Prompt user for different channel
+      - code: SQLITE_CONSTRAINT_CHECK
+        message: "Invalid moisture level or sensor channel"
+        recovery: Show validation error, prompt again
+
+  - name: load_all_profiles
+    type: SELECT
+    description: Load all plant profiles for monitoring cycle
+    sql: |
+      SELECT
+          plant_name,
+          sensor_channel,
+          acceptable_moisture_level,
+          current_moisture_level,
+          needs_watering,
+          date_last_watered
+      FROM plant_profiles
+      ORDER BY sensor_channel;
+    parameters: []
+    returns:
+      - type: List[PlantProfile]
+        description: All plant profiles ordered by sensor channel
+    preconditions:
+      - Database file exists and is readable
+    postconditions:
+      - Returns 0-3 rows (max 3 sensor channels)
+      - Each row is valid PlantProfile
+    errors:
+      - code: SQLITE_CANTOPEN
+        message: "Database file not found or corrupted"
+        recovery: Log error, return empty list, use environment defaults
+
+  - name: load_profile_by_channel
+    type: SELECT
+    description: Load specific plant profile for sensor channel
+    sql: |
+      SELECT
+          plant_name,
+          sensor_channel,
+          acceptable_moisture_level,
+          current_moisture_level,
+          needs_watering,
+          date_last_watered
+      FROM plant_profiles
+      WHERE sensor_channel = ?;
+    parameters:
+      - name: sensor_channel
+        type: INTEGER
+        constraints: Must be 0, 1, or 2
+        example: 0
+    returns:
+      - type: Optional[PlantProfile]
+        description: Plant profile if exists, None if unmapped channel
+    preconditions:
+      - Database file exists and is readable
+    postconditions:
+      - Returns at most 1 row (unique constraint on sensor_channel)
+    errors:
+      - code: SQLITE_ERROR
+        message: "Database read error"
+        recovery: Log error, return None, use environment default
+
+  - name: update_current_moisture
+    type: UPDATE
+    description: Update plant's current moisture reading
+    sql: |
+      UPDATE plant_profiles
+      SET current_moisture_level = ?
+      WHERE plant_name = ?;
+    parameters:
+      - name: current_moisture_level
+        type: REAL
+        constraints: 0.0 ≤ value ≤ 100.0
+        example: 42.5
+      - name: plant_name
+        type: TEXT
+        example: "Basil"
+    preconditions:
+      - plant_name exists in database
+      - current_moisture_level is valid percentage
+    postconditions:
+      - current_moisture_level column updated
+      - Other columns unchanged
+    errors:
+      - code: SQLITE_CONSTRAINT_CHECK
+        message: "Invalid moisture level (must be 0-100%)"
+        recovery: Log error, skip update
+      - code: SQLITE_ERROR
+        message: "Database write error"
+        recovery: Log error, continue monitoring without update (FR-017)
+
+  - name: set_needs_watering_flag
+    type: UPDATE
+    description: Update needs_watering flag based on threshold comparison
+    sql: |
+      UPDATE plant_profiles
+      SET needs_watering = ?
+      WHERE plant_name = ?;
+    parameters:
+      - name: needs_watering
+        type: INTEGER
+        constraints: Must be 0 or 1
+        example: 1
+      - name: plant_name
+        type: TEXT
+        example: "Basil"
+    preconditions:
+      - plant_name exists in database
+      - needs_watering is boolean (0 or 1)
+    postconditions:
+      - needs_watering flag updated
+      - Other columns unchanged
+    errors:
+      - code: SQLITE_ERROR
+        message: "Database write error"
+        recovery: Log error, continue monitoring without update
+
+  - name: record_watering_event
+    type: UPDATE
+    description: Record that plant was watered (moisture rose above threshold)
+    sql: |
+      UPDATE plant_profiles
+      SET needs_watering = 0,
+          date_last_watered = ?
+      WHERE plant_name = ?;
+    parameters:
+      - name: date_last_watered
+        type: TEXT
+        constraints: ISO 8601 date format (YYYY-MM-DD)
+        example: "2026-02-13"
+      - name: plant_name
+        type: TEXT
+        example: "Basil"
+    preconditions:
+      - plant_name exists in database
+      - date_last_watered is valid ISO 8601 date
+      - Plant's moisture has risen above threshold
+    postconditions:
+      - needs_watering set to 0
+      - date_last_watered updated to provided date
+      - current_moisture_level unchanged
+    errors:
+      - code: SQLITE_ERROR
+        message: "Database write error"
+        recovery: Log error, continue monitoring without update
+
+# Test Contracts
+
+test_scenarios:
+  - scenario: Create profile with valid data
+    operation: create_plant_profile
+    input:
+      plant_name: "Basil"
+      sensor_channel: 0
+      acceptable_moisture_level: 45.0
+    expected_result: SUCCESS
+    expected_state:
+      plant_name: "Basil"
+      sensor_channel: 0
+      acceptable_moisture_level: 45.0
+      current_moisture_level: NULL
+      needs_watering: 0
+      date_last_watered: NULL
+
+  - scenario: Create profile with duplicate plant name
+    operation: create_plant_profile
+    input:
+      plant_name: "Basil"  # Already exists
+      sensor_channel: 1
+      acceptable_moisture_level: 50.0
+    expected_result: SQLITE_CONSTRAINT_PRIMARYKEY
+    expected_error: "Plant name 'Basil' already exists"
+
+  - scenario: Create profile with duplicate sensor channel
+    operation: create_plant_profile
+    input:
+      plant_name: "Tomato"
+      sensor_channel: 0  # Already assigned to Basil
+      acceptable_moisture_level: 40.0
+    expected_result: SQLITE_CONSTRAINT_UNIQUE
+    expected_error: "Sensor channel 0 already assigned"
+
+  - scenario: Load all profiles
+    operation: load_all_profiles
+    preconditions:
+      - Database has 2 profiles (Basil on channel 0, Tomato on channel 1)
+    expected_result: SUCCESS
+    expected_data:
+      - plant_name: "Basil"
+        sensor_channel: 0
+      - plant_name: "Tomato"
+        sensor_channel: 1
+
+  - scenario: Load profile by channel (exists)
+    operation: load_profile_by_channel
+    input:
+      sensor_channel: 0
+    expected_result: SUCCESS
+    expected_data:
+      plant_name: "Basil"
+      sensor_channel: 0
+
+  - scenario: Load profile by channel (unmapped)
+    operation: load_profile_by_channel
+    input:
+      sensor_channel: 2  # No profile assigned
+    expected_result: SUCCESS
+    expected_data: NULL
+
+  - scenario: Update moisture reading
+    operation: update_current_moisture
+    input:
+      plant_name: "Basil"
+      current_moisture_level: 42.5
+    expected_result: SUCCESS
+    expected_state:
+      current_moisture_level: 42.5
+
+  - scenario: Record watering event
+    operation: record_watering_event
+    input:
+      plant_name: "Basil"
+      date_last_watered: "2026-02-13"
+    expected_result: SUCCESS
+    expected_state:
+      needs_watering: 0
+      date_last_watered: "2026-02-13"
+
+  - scenario: Database unavailable
+    operation: load_all_profiles
+    preconditions:
+      - Database file missing or corrupted
+    expected_result: SQLITE_CANTOPEN
+    expected_recovery: Return empty list, log error, use environment defaults
+
+  - scenario: Database write failure during monitoring
+    operation: update_current_moisture
+    preconditions:
+      - Database file is read-only or disk full
+    expected_result: SQLITE_ERROR
+    expected_recovery: Log error, continue monitoring without update (FR-017)
