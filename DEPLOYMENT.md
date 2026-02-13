@@ -119,7 +119,7 @@ source venv/bin/activate
 pip3 install -r requirements.txt
 
 # Verify installation
-python3 -c "import board; import busio; from adafruit_ads1x15.ads1115 import ADS1115; print('Success!')"
+python3 -c "from ADS1x15 import ADS1115; print('Success! ADS1115 library installed.')"
 ```
 
 ## Configuration
@@ -370,7 +370,7 @@ tail -f /var/log/plant-monitor.log
 
 2. Check Python dependencies:
    ```bash
-   pip3 list | grep -E '(adafruit|requests|dotenv)'
+   pip3 list | grep -E '(ADS1x15|requests|dotenv)'
    ```
 
 3. Check I2C permissions:

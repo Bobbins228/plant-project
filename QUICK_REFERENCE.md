@@ -114,7 +114,7 @@ pytest tests/integration/test_single_plant_alert.py -v
 sudo journalctl -u plant-monitor.service -n 100 | grep -i error
 
 # Check Python dependencies
-pip3 list | grep -E '(adafruit|requests|dotenv|pytest)'
+pip3 list | grep -E '(ADS1x15|requests|dotenv|pytest)'
 
 # Verify I2C enabled
 lsmod | grep i2c

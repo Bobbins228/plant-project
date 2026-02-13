@@ -197,7 +197,7 @@ Log files are also written to `/var/log/plant-monitor.log` (rotated at 10MB, 5 b
 
 1. Check Python dependencies:
    ```bash
-   pip3 list | grep -E '(adafruit|requests|dotenv)'
+   pip3 list | grep -E '(ADS1x15|requests|dotenv)'
    ```
 
 2. Verify I2C enabled:

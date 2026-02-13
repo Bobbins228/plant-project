@@ -1,8 +1,8 @@
 # Plant Monitoring System Dependencies
 # Python 3.9+ required
 
-# I2C sensor communication
-adafruit-circuitpython-ads1x15==2.2.23
+# I2C sensor communication (ADS1115 ADC)
+ADS1x15-ADC
 
 # HTTP requests for ntfy.sh API
 requests==2.31.0
